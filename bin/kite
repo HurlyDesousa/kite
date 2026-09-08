@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Start the local Kite desk and raise its Omarchy webapp window.
+set -euo pipefail
+
+PORT=7423
+URL="http://127.0.0.1:${PORT}"
+WWW="${KITE_WWW:-${HOME}/.local/share/kite/www}"
+STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/kite"
+mkdir -p "${STATE}"
+
+if command -v kite-sync-theme >/dev/null 2>&1; then
+  kite-sync-theme >/dev/null 2>&1 || true
+elif [[ -x "$(dirname "${BASH_SOURCE[0]}")/../omarchy/sync-theme" ]]; then
+  "$(dirname "${BASH_SOURCE[0]}")/../omarchy/sync-theme" >/dev/null 2>&1 || true
+fi
+
+port_open() {
+  bash -c "echo >/dev/tcp/127.0.0.1/${PORT}" >/dev/null 2>&1
+}
+
+if ! port_open; then
+  if [[ ! -d "${WWW}" ]]; then
+    echo "Kite is not installed yet. From the repo: ./install.sh" >&2
+    echo "Or run a dev desk with: npm install && npm run dev" >&2
+    exit 1
+  fi
+  python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${WWW}" \
+    >"${STATE}/server.log" 2>&1 &
+  echo $! >"${STATE}/server.pid"
+  for _ in 1 2 3 4 5 6 7 8; do
+    port_open && break
+    sleep 0.15
+  done
+fi
+
+if command -v omarchy-launch-or-focus-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-or-focus-webapp Kite "${URL}"
+fi
+
+if command -v omarchy-launch-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-webapp "${URL}"
+fi
+
+exec omarchy launch browser "${URL}"

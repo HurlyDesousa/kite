@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kite
+Comment=Nostr listening desk for Omarchy
+Exec=kite
+Icon=kite
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupNotify=true

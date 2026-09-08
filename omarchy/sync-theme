@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Rewrite Kite CSS variables from the current Omarchy theme's colors.toml.
+set -euo pipefail
+
+destinations=()
+
+add_dest() {
+  local path="$1"
+  local dir
+  dir="$(dirname "${path}")"
+  mkdir -p "${dir}"
+  destinations+=("${path}")
+}
+
+if command -v omarchy >/dev/null 2>&1; then
+  theme_name="$(omarchy theme current 2>/dev/null || true)"
+  if [[ -n "${theme_name}" ]]; then
+    theme_dir="$(omarchy theme dir "${theme_name}" 2>/dev/null || true)"
+  fi
+fi
+
+colors="${theme_dir:-}/colors.toml"
+if [[ -z "${theme_dir:-}" || ! -f "${colors}" ]]; then
+  echo "kite-sync-theme: no Omarchy colors.toml found; leaving theme.css as-is." >&2
+  exit 0
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+add_dest "${HOME}/.config/kite/theme.css"
+[[ -d "${repo_root}/public" ]] && add_dest "${repo_root}/public/theme.css"
+[[ -d "${HOME}/.local/share/kite/www" ]] && add_dest "${HOME}/.local/share/kite/www/theme.css"
+
+python3 - "${colors}" "${destinations[@]}" <<'PY'
+import pathlib
+import re
+import sys
+
+colors_path = pathlib.Path(sys.argv[1])
+dests = [pathlib.Path(p) for p in sys.argv[2:]]
+vals: dict[str, str] = {}
+for line in colors_path.read_text(encoding="utf-8").splitlines():
+    match = re.match(r'^(\w+)\s*=\s*"([^"]+)"', line)
+    if match:
+        vals[match.group(1)] = match.group(2)
+
+def color(key: str, fallback: str) -> str:
+    return vals.get(key, fallback)
+
+css = f"""/* Generated from Omarchy theme. Do not edit by hand — kite-sync-theme rewrites it. */
+:root {{
+  --bg: {color("background", "#2c2525")};
+  --bg-deep: {color("darker_background", "#181414")};
+  --bg-lift: {color("lighter_background", "#3d2f2a")};
+  --fg: {color("foreground", "#e6d9db")};
+  --fg-mute: {color("dark_foreground", "#72696a")};
+  --fg-soft: {color("light_foreground", "#c3b7b8")};
+  --accent: {color("accent", "#f38d70")};
+  --sel: {color("selection", "#403e41")};
+  --red: {color("red", "#fd6883")};
+  --yellow: {color("yellow", "#f9cc6c")};
+  --green: {color("green", "#adda78")};
+  --cyan: {color("cyan", "#85dacc")};
+  --magenta: {color("magenta", "#a8a9eb")};
+  --orange: {color("orange", "#fb9a77")};
+  --theme-mode: {color("mode", "dark")};
+}}
+"""
+
+for dest in dests:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(css, encoding="utf-8")
+    print(f"kite-sync-theme: wrote {dest}")
+PY

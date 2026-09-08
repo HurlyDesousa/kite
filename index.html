@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Kite</title>
+    <link rel="icon" href="/kite.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div class="grain" aria-hidden="true"></div>
+      <aside class="wind" aria-label="Relays">
+        <p class="wind-label">Wind</p>
+        <ul id="relays"></ul>
+      </aside>
+
+      <main class="sky">
+        <svg class="string" viewBox="0 0 80 1100" preserveAspectRatio="none" aria-hidden="true">
+          <path
+            d="M40 36
+               C 58 160, 22 280, 44 420
+               C 68 560, 26 700, 42 840
+               C 54 940, 36 1020, 40 1090"
+          />
+        </svg>
+
+        <button class="identity" id="identity" type="button" aria-haspopup="dialog">
+          <svg class="kite-mark" viewBox="0 0 64 80" aria-hidden="true">
+            <path d="M32 4 L56 32 L32 44 L8 32 Z" />
+            <path class="kite-shade" d="M32 4 L32 44 L8 32 Z" />
+            <path d="M32 44 L28 56 L32 54 L36 56 Z" />
+            <path class="kite-tail" d="M32 54 L24 70" />
+            <path class="kite-tail" d="M32 58 L40 72" />
+          </svg>
+          <span>
+            <span class="callsign" id="callsign">listening</span>
+            <span class="role" id="role">read-only</span>
+          </span>
+        </button>
+
+        <ol class="flags" id="flags"></ol>
+      </main>
+
+      <footer class="ground">
+        <form id="spool">
+          <label class="sr-only" for="note">Note</label>
+          <textarea
+            id="note"
+            rows="1"
+            maxlength="2000"
+            placeholder="Let a note catch the wind…"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" id="release">Release</button>
+        </form>
+        <p class="hint" id="status">Reaching for wind…</p>
+      </footer>
+    </div>
+
+    <dialog id="keys-dialog">
+      <form method="dialog" class="keys-sheet">
+        <h2>The string</h2>
+        <p>
+          Your secret key never leaves this machine. Kite talks to relays from
+          here. There is no account server.
+        </p>
+        <p class="npub-line">
+          Public <code id="dialog-npub">none</code>
+        </p>
+        <label class="import">
+          Import nsec
+          <input id="nsec-input" type="password" placeholder="nsec1…" spellcheck="false" />
+        </label>
+        <menu>
+          <button value="cancel" type="submit">Close</button>
+          <button id="forget" type="button">Forget</button>
+          <button id="generate" type="button">Cut a new key</button>
+          <button id="import-key" type="button">Hold this string</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

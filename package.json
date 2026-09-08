@@ -1,0 +1,22 @@
+{
+  "name": "kite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local-first Nostr listening desk for Omarchy",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.16.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

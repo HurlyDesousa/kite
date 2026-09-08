@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "hurly.kite",
+  "name": "Kite",
+  "version": "0.1.0",
+  "author": "Hurly",
+  "license": "MIT",
+  "description": "Bar launcher for Kite, the Omarchy Nostr listening desk",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Kite",
+    "description": "Open the Kite Nostr desk",
+    "category": "Launchers",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

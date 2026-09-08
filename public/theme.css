@@ -1,0 +1,18 @@
+/* Generated from the Omarchy theme. `omarchy/sync-theme` rewrites this file. */
+:root {
+  --bg: #2c2525;
+  --bg-deep: #181414;
+  --bg-lift: #3d2f2a;
+  --fg: #e6d9db;
+  --fg-mute: #72696a;
+  --fg-soft: #c3b7b8;
+  --accent: #f38d70;
+  --sel: #403e41;
+  --red: #fd6883;
+  --yellow: #f9cc6c;
+  --green: #adda78;
+  --cyan: #85dacc;
+  --magenta: #a8a9eb;
+  --orange: #fb9a77;
+  --theme-mode: dark;
+}
