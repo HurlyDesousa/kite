@@ -14,6 +14,11 @@
       <div class="grain" aria-hidden="true"></div>
       <aside class="wind" aria-label="Relays">
         <p class="wind-label">Wind</p>
+        <div class="wind-mode" role="group" aria-label="Which wind">
+          <button type="button" id="wind-follows" aria-pressed="false">Follow</button>
+          <button type="button" id="wind-global" aria-pressed="true">Open</button>
+        </div>
+        <p class="wind-meta" id="follow-count">Open wind — anyone on these relays</p>
         <ul id="relays"></ul>
       </aside>
 
@@ -64,8 +69,10 @@
       <form method="dialog" class="keys-sheet">
         <h2>The string</h2>
         <p>
-          Your secret key never leaves this machine. Kite talks to relays from
-          here. There is no account server.
+          Kite never sends your key to a server. Prefer a NIP-07 extension, or
+          keep an nsec in this session only. Check the box only if you want it
+          on this machine. For a vault that never touches the browser, use
+          Omostrich or a phone signer.
         </p>
         <p class="npub-line">
           Public <code id="dialog-npub">none</code>
@@ -74,9 +81,14 @@
           Import nsec
           <input id="nsec-input" type="password" placeholder="nsec1…" spellcheck="false" />
         </label>
+        <label class="remember">
+          <input id="remember" type="checkbox" />
+          Keep this nsec on this machine
+        </label>
         <menu>
           <button value="cancel" type="submit">Close</button>
           <button id="forget" type="button">Forget</button>
+          <button id="nip07" type="button" hidden>Sign with extension</button>
           <button id="generate" type="button">Cut a new key</button>
           <button id="import-key" type="button">Hold this string</button>
         </menu>

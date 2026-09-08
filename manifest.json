@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.hurlydesousa.kite",
+  "name": "Kite",
+  "version": "0.2.0",
+  "author": "Hurly",
+  "license": "MIT",
+  "description": "Nostr listening desk for the Omarchy bar — notes clip to a string, keys stay on this machine.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Kite",
+    "description": "Open the Kite Nostr desk, or skim the latest notes from the bar.",
+    "category": "Network",
+    "aliases": ["kite", "nostr", "notes", "relays"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

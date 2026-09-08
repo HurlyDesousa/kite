@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Local desk server: static files plus POST /kite/state for the bar widget."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+PORT = int(os.environ.get("KITE_PORT", "7423"))
+WWW = Path(os.environ.get("KITE_WWW", Path.home() / ".local/share/kite/www")).resolve()
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "kite"
+STATE_FILE = STATE_DIR / "latest.json"
+MAX_BYTES = 64 * 1024
+
+
+def sanitize(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("expected object")
+    notes_in = payload.get("notes")
+    notes = []
+    if isinstance(notes_in, list):
+        for item in notes_in[:5]:
+            if not isinstance(item, dict):
+                continue
+            notes.append(
+                {
+                    "who": str(item.get("who") or "note")[:48],
+                    "content": str(item.get("content") or "")[:180],
+                    "createdAt": int(item.get("createdAt") or 0),
+                }
+            )
+    npub = payload.get("npub")
+    return {
+        "npub": str(npub)[:80] if isinstance(npub, str) else "",
+        "mode": "follows" if payload.get("mode") == "follows" else "global",
+        "count": int(payload.get("count") or 0),
+        "notes": notes,
+    }
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(WWW), **kwargs)
+
+    def do_POST(self) -> None:
+        if self.path.split("?", 1)[0].rstrip("/") != "/kite/state":
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length > MAX_BYTES:
+            self.send_error(413)
+            return
+        raw = self.rfile.read(length)
+        try:
+            payload = sanitize(json.loads(raw.decode("utf-8")))
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+            self.send_error(400)
+            return
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(STATE_FILE)
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:
+        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+
+
+def main() -> int:
+    if not WWW.is_dir():
+        print(f"kite-serve: missing web root {WWW}", file=sys.stderr)
+        return 1
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    print(f"kite-serve: http://127.0.0.1:{PORT}  www={WWW}", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

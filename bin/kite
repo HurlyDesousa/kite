@@ -2,16 +2,18 @@
 # Start the local Kite desk and raise its Omarchy webapp window.
 set -euo pipefail
 
-PORT=7423
+PORT="${KITE_PORT:-7423}"
 URL="http://127.0.0.1:${PORT}"
 WWW="${KITE_WWW:-${HOME}/.local/share/kite/www}"
 STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/kite"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVE="${ROOT}/bin/kite-serve"
 mkdir -p "${STATE}"
 
 if command -v kite-sync-theme >/dev/null 2>&1; then
   kite-sync-theme >/dev/null 2>&1 || true
-elif [[ -x "$(dirname "${BASH_SOURCE[0]}")/../omarchy/sync-theme" ]]; then
-  "$(dirname "${BASH_SOURCE[0]}")/../omarchy/sync-theme" >/dev/null 2>&1 || true
+elif [[ -x "${ROOT}/omarchy/sync-theme" ]]; then
+  "${ROOT}/omarchy/sync-theme" >/dev/null 2>&1 || true
 fi
 
 port_open() {
@@ -24,7 +26,14 @@ if ! port_open; then
     echo "Or run a dev desk with: npm install && npm run dev" >&2
     exit 1
   fi
-  python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${WWW}" \
+  if [[ ! -x "${SERVE}" ]]; then
+    SERVE="$(command -v kite-serve || true)"
+  fi
+  if [[ -z "${SERVE}" || ! -f "${SERVE}" ]]; then
+    echo "kite-serve is missing." >&2
+    exit 1
+  fi
+  KITE_WWW="${WWW}" KITE_PORT="${PORT}" python3 "${SERVE}" \
     >"${STATE}/server.log" 2>&1 &
   echo $! >"${STATE}/server.pid"
   for _ in 1 2 3 4 5 6 7 8; do

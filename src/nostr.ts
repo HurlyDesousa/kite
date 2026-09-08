@@ -33,6 +33,9 @@ function toNote(event: Event): Note {
 }
 
 function isNoise(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return true;
+  if (trimmed.startsWith("channel:")) return true;
   const links = content.match(/https?:\/\//g)?.length ?? 0;
   if (links >= 2) return true;
   if (content.length > 560) return true;
@@ -55,31 +58,41 @@ export function parseProfile(event: Event): Profile {
   }
 }
 
+function followPubkeys(event: Event): string[] {
+  return [...new Set(event.tags.filter((tag) => tag[0] === "p" && tag[1]).map((tag) => tag[1]))];
+}
+
 export function listen(handlers: {
   onNote: (note: Note) => void;
   onProfile: (pubkey: string, profile: Profile) => void;
   onRelay: (state: RelayState) => void;
   onReady: () => void;
-}): { close: () => void; loadProfiles: (pubkeys: string[]) => void } {
+  onFollows?: (pubkeys: string[]) => void;
+}): {
+  close: () => void;
+  loadProfiles: (pubkeys: string[]) => void;
+  loadFollows: (pubkey: string) => void;
+  setAuthors: (authors?: string[]) => void;
+} {
   const seen = new Set<string>();
-  let ready = false;
+  let notesSub = startNotes();
 
-  const sub = pool.subscribe(
-    RELAYS,
-    { kinds: [1], limit: 32 },
-    {
+  function startNotes(authors?: string[]) {
+    const filter =
+      authors && authors.length > 0
+        ? { kinds: [1], authors, limit: 48 }
+        : { kinds: [1], limit: 32 };
+    return pool.subscribe(RELAYS, filter, {
       onevent(event) {
         if (event.kind !== 1 || seen.has(event.id) || isNoise(event.content)) return;
         seen.add(event.id);
         handlers.onNote(toNote(event));
       },
       oneose() {
-        if (ready) return;
-        ready = true;
         handlers.onReady();
       },
-    },
-  );
+    });
+  }
 
   for (const url of RELAYS) {
     handlers.onRelay({ url, live: false });
@@ -98,10 +111,15 @@ export function listen(handlers: {
 
   return {
     close() {
-      sub.close();
+      notesSub.close();
+    },
+    setAuthors(authors?: string[]) {
+      seen.clear();
+      notesSub.close();
+      notesSub = startNotes(authors);
     },
     loadProfiles(pubkeys: string[]) {
-      const unique = [...new Set(pubkeys)].slice(0, 40);
+      const unique = [...new Set(pubkeys)].slice(0, 80);
       if (unique.length === 0) return;
       const profiles = pool.subscribe(
         RELAYS,
@@ -112,6 +130,23 @@ export function listen(handlers: {
           },
           oneose() {
             profiles.close();
+          },
+        },
+      );
+    },
+    loadFollows(pubkey: string) {
+      let got = false;
+      const follows = pool.subscribe(
+        RELAYS,
+        { kinds: [3], authors: [pubkey], limit: 1 },
+        {
+          onevent(event) {
+            got = true;
+            handlers.onFollows?.(followPubkeys(event).slice(0, 200));
+          },
+          oneose() {
+            if (!got) handlers.onFollows?.([]);
+            follows.close();
           },
         },
       );

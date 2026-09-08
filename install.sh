@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Re-runnable user install. Never blocks on a sudo password prompt.
+# Optional local install for the web desk, launcher, and theme hook.
+# The bar widget is meant to be installed with:
+#   omarchy plugin add https://github.com/HurlyDesousa/kite.git --enable
+# This script still copies the QML into the user plugin dir when that checkout
+# is not already present, and migrates the old hurly.kite id.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ID="hurly.kite"
-PLUGIN_SRC="${ROOT}/omarchy/${PLUGIN_ID}"
+PLUGIN_ID="io.github.hurlydesousa.kite"
+OLD_PLUGIN_ID="hurly.kite"
 PLUGIN_DIR="${HOME}/.config/omarchy/plugins/${PLUGIN_ID}"
+OLD_PLUGIN_DIR="${HOME}/.config/omarchy/plugins/${OLD_PLUGIN_ID}"
 BIN_DST="${HOME}/.local/bin/kite"
+SERVE_DST="${HOME}/.local/bin/kite-serve"
 SYNC_DST="${HOME}/.local/bin/kite-sync-theme"
 WWW_DST="${HOME}/.local/share/kite/www"
 ICON_DST="${HOME}/.local/share/icons/hicolor/scalable/apps/kite.svg"
@@ -34,15 +40,28 @@ install_web() {
 
 install_bins() {
   install -Dm755 "${ROOT}/bin/kite" "${BIN_DST}"
+  install -Dm755 "${ROOT}/bin/kite-serve" "${SERVE_DST}"
   install -Dm755 "${ROOT}/omarchy/sync-theme" "${SYNC_DST}"
   sed "s|^Icon=kite$|Icon=${ICON_DST}|" "${ROOT}/omarchy/kite.desktop" >"${DESKTOP_DST}"
   echo "Launcher: ${BIN_DST}"
 }
 
+remove_old_plugin() {
+  if [[ -e "${OLD_PLUGIN_DIR}" ]]; then
+    rm -rf "${OLD_PLUGIN_DIR}"
+    echo "Removed old plugin id ${OLD_PLUGIN_ID}"
+  fi
+}
+
 install_plugin() {
   mkdir -p "${PLUGIN_DIR}"
-  install -Dm644 "${PLUGIN_SRC}/manifest.json" "${PLUGIN_DIR}/manifest.json"
-  install -Dm644 "${PLUGIN_SRC}/BarWidget.qml" "${PLUGIN_DIR}/BarWidget.qml"
+  if [[ -d "${PLUGIN_DIR}/.git" ]]; then
+    echo "Plugin already a git checkout at ${PLUGIN_DIR}; leaving it for omarchy plugin update."
+    return 0
+  fi
+  install -Dm644 "${ROOT}/manifest.json" "${PLUGIN_DIR}/manifest.json"
+  install -Dm644 "${ROOT}/BarWidget.qml" "${PLUGIN_DIR}/BarWidget.qml"
+  install -Dm644 "${ROOT}/Panel.qml" "${PLUGIN_DIR}/Panel.qml"
   echo "Plugin: ${PLUGIN_DIR}"
 }
 
@@ -51,11 +70,12 @@ patch_shell_json() {
     echo "Note: ${SHELL_JSON} not found; enable the plugin with: omarchy plugin enable ${PLUGIN_ID}"
     return 0
   }
-  python3 - "${SHELL_JSON}" "${PLUGIN_ID}" <<'PY'
+  python3 - "${SHELL_JSON}" "${PLUGIN_ID}" "${OLD_PLUGIN_ID}" <<'PY'
 import json, pathlib, sys
 
 path = pathlib.Path(sys.argv[1])
 plugin_id = sys.argv[2]
+old_id = sys.argv[3]
 try:
     data = json.loads(path.read_text(encoding="utf-8"))
 except Exception as exc:
@@ -63,14 +83,34 @@ except Exception as exc:
     sys.exit(0)
 
 layout = data.setdefault("bar", {}).setdefault("layout", {})
+changed = False
+
+for section in ("left", "center", "right"):
+    entries = layout.setdefault(section, [])
+    cleaned = []
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("id") == old_id:
+            changed = True
+            continue
+        cleaned.append(entry)
+    layout[section] = cleaned
+
+plugins = data.get("plugins")
+if isinstance(plugins, list):
+    data["plugins"] = [p for p in plugins if not (isinstance(p, dict) and p.get("id") == old_id)]
+
+def ids(entries):
+    return [e.get("id") for e in entries if isinstance(e, dict)]
+
 center = layout.setdefault("center", [])
 right = layout.setdefault("right", [])
 
-def ids(entries):
-    return [e.get("id") for e in entries]
-
 if plugin_id in ids(center) or plugin_id in ids(right):
-    print(f"shell.json: {plugin_id} already present")
+    if changed:
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"shell.json: removed {old_id}; {plugin_id} already present")
+    else:
+        print(f"shell.json: {plugin_id} already present")
     sys.exit(0)
 
 entry = {"id": plugin_id}
@@ -115,7 +155,7 @@ else:
         text += "\n"
     text += "\n" + block
 path.write_text(text, encoding="utf-8")
-print(f"bindings.lua: Super+Shift+Alt+N → Kite")
+print("bindings.lua: Super+Shift+Alt+N → Kite")
 PY
 }
 
@@ -129,16 +169,25 @@ install_hook() {
 
 install_web
 install_bins
+remove_old_plugin
 install_plugin
 patch_shell_json
 patch_bindings
 install_hook
 "${SYNC_DST}" || true
 
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy plugin validate "${PLUGIN_DIR}" || true
+fi
+
 echo
 echo "Kite is installed."
 echo "  Open: kite"
 echo "  Key:  Super+Shift+Alt+N"
-echo "  Bar:  wind icon (restart the shell if it is missing)"
+echo "  Bar:  ${PLUGIN_ID}"
+echo
+echo "Preferred plugin install (safe add/remove, git updates):"
+echo "  omarchy plugin add https://github.com/HurlyDesousa/kite.git --enable"
+echo "  omarchy plugin remove ${PLUGIN_ID}"
 echo
 echo "  omarchy restart shell"

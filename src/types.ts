@@ -17,3 +17,7 @@ export type Profile = {
   name?: string;
   displayName?: string;
 };
+
+export type WindMode = "global" | "follows";
+
+export type Signer = "none" | "nsec" | "nip07";

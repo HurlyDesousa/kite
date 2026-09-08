@@ -1,6 +1,7 @@
-import type { Note, Profile, RelayState } from "./types";
+import type { Note, Profile, RelayState, WindMode } from "./types";
 import { hostOf, npubOf } from "./nostr";
 import { shortNpub } from "./keys";
+import { barNotes, barNpub, queueBarState } from "./state";
 
 const flagsEl = document.querySelector<HTMLOListElement>("#flags")!;
 const relaysEl = document.querySelector<HTMLUListElement>("#relays")!;
@@ -9,10 +10,19 @@ const callsignEl = document.querySelector<HTMLElement>("#callsign")!;
 const roleEl = document.querySelector<HTMLElement>("#role")!;
 const npubEl = document.querySelector<HTMLElement>("#dialog-npub")!;
 const releaseBtn = document.querySelector<HTMLButtonElement>("#release")!;
+const followBtn = document.querySelector<HTMLButtonElement>("#wind-follows")!;
+const globalBtn = document.querySelector<HTMLButtonElement>("#wind-global")!;
+const followCountEl = document.querySelector<HTMLParagraphElement>("#follow-count")!;
+const nip07Btn = document.querySelector<HTMLButtonElement>("#nip07")!;
+const rememberEl = document.querySelector<HTMLInputElement>("#remember")!;
 
 const profiles = new Map<string, Profile>();
 const notes = new Map<string, Note>();
 const relayState = new Map<string, RelayState>();
+
+let currentNpub: string | null = null;
+let currentMode: WindMode = "global";
+let liveCount = 0;
 
 function tiltFor(id: string): string {
   const n = [...id].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -83,6 +93,18 @@ function sortNotes(): Note[] {
   return [...notes.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 48);
 }
 
+function pushBar(): void {
+  queueBarState({
+    npub: barNpub(currentNpub),
+    mode: currentMode,
+    count: liveCount,
+    notes: barNotes(
+      sortNotes().filter((note) => !note.local),
+      displayName,
+    ),
+  });
+}
+
 export function paintFlags(ownPubkey?: string): void {
   const snapshot = sortNotes();
   flagsEl.replaceChildren();
@@ -91,10 +113,13 @@ export function paintFlags(ownPubkey?: string): void {
     if (ownPubkey && note.pubkey === ownPubkey) el.classList.add("own");
     flagsEl.append(el);
   }
+  pushBar();
 }
 
 export function upsertNote(note: Note, ownPubkey?: string): void {
+  const isNew = !notes.has(note.id);
   notes.set(note.id, note);
+  if (isNew && !note.local) liveCount += 1;
   paintFlags(ownPubkey);
 }
 
@@ -102,6 +127,12 @@ export function clearSeeds(ownPubkey?: string): void {
   for (const [id, note] of notes) {
     if (note.local) notes.delete(id);
   }
+  paintFlags(ownPubkey);
+}
+
+export function clearLiveNotes(ownPubkey?: string): void {
+  notes.clear();
+  liveCount = 0;
   paintFlags(ownPubkey);
 }
 
@@ -135,11 +166,42 @@ export function setStatus(text: string): void {
   statusEl.textContent = text;
 }
 
-export function setIdentity(npub: string | null, canPost: boolean): void {
+export function setIdentity(npub: string | null, canPost: boolean, via = "nsec"): void {
+  currentNpub = npub;
   callsignEl.textContent = npub ? shortNpub(npub) : "listening";
-  roleEl.textContent = canPost ? "on the string" : "read-only";
+  roleEl.textContent = canPost ? (via === "nip07" ? "signed by extension" : "on the string") : "read-only";
   npubEl.textContent = npub ?? "none";
   releaseBtn.disabled = !canPost;
+  pushBar();
+}
+
+export function setWindMode(mode: WindMode, followCount?: number): void {
+  currentMode = mode;
+  followBtn.setAttribute("aria-pressed", String(mode === "follows"));
+  globalBtn.setAttribute("aria-pressed", String(mode === "global"));
+  if (mode === "follows") {
+    followCountEl.textContent =
+      followCount === undefined
+        ? "Reading your follow list…"
+        : followCount === 0
+          ? "No follows on relays yet"
+          : `${followCount} people on this wind`;
+  } else {
+    followCountEl.textContent = "Open wind — anyone on these relays";
+  }
+  pushBar();
+}
+
+export function showNip07(available: boolean): void {
+  nip07Btn.hidden = !available;
+}
+
+export function rememberChecked(): boolean {
+  return rememberEl.checked;
+}
+
+export function setRememberChecked(value: boolean): void {
+  rememberEl.checked = value;
 }
 
 export const seedNotes: Note[] = [
@@ -147,7 +209,7 @@ export const seedNotes: Note[] = [
     id: "seed-1",
     pubkey: "0".repeat(64),
     createdAt: Math.floor(Date.now() / 1000) - 40,
-    content: "Kite is a listening desk, not a feed. Notes clip to the string. Relays are weather.",
+    content: "Kite is a listening desk. Notes clip to the string. Relays are weather.",
     reply: false,
     local: true,
   },
@@ -155,7 +217,7 @@ export const seedNotes: Note[] = [
     id: "seed-2",
     pubkey: "0".repeat(64),
     createdAt: Math.floor(Date.now() / 1000) - 20,
-    content: "Your nsec stays on this machine. Omarchy paints the sky when you change themes.",
+    content: "Hold a string in this session, or sign with a NIP-07 extension. The nsec stays off disk unless you ask.",
     reply: false,
     local: true,
   },
@@ -163,7 +225,7 @@ export const seedNotes: Note[] = [
     id: "seed-3",
     pubkey: "0".repeat(64),
     createdAt: Math.floor(Date.now() / 1000) - 5,
-    content: "Click the kite to hold a string. Super+Shift+Alt+N lifts this window on Omarchy.",
+    content: "Follow wind reads your kind-3 list. Open wind is the public gust. Super+Shift+Alt+N lifts this window.",
     reply: false,
     local: true,
   },

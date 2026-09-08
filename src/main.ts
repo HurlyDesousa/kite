@@ -4,11 +4,18 @@ import {
   decodeSecret,
   hexPubkey,
   loadSecret,
+  npubFromHex,
   npubFromSecret,
   saveSecret,
   signNote,
+  signWithNip07,
+  hasNip07,
+  preferNip07,
+  rememberPreferred,
+  signerPref,
 } from "./keys";
 import { listen, publish } from "./nostr";
+import type { WindMode } from "./types";
 import {
   knownPubkeys,
   paintFlags,
@@ -19,27 +26,65 @@ import {
   setStatus,
   upsertNote,
   clearSeeds,
+  clearLiveNotes,
+  setWindMode,
+  showNip07,
+  rememberChecked,
+  setRememberChecked,
 } from "./ui";
+
+const WIND_KEY = "kite.wind";
 
 const dialog = document.querySelector<HTMLDialogElement>("#keys-dialog")!;
 const identityBtn = document.querySelector<HTMLButtonElement>("#identity")!;
 const generateBtn = document.querySelector<HTMLButtonElement>("#generate")!;
 const importBtn = document.querySelector<HTMLButtonElement>("#import-key")!;
 const forgetBtn = document.querySelector<HTMLButtonElement>("#forget")!;
+const nip07Btn = document.querySelector<HTMLButtonElement>("#nip07")!;
 const nsecInput = document.querySelector<HTMLInputElement>("#nsec-input")!;
 const spool = document.querySelector<HTMLFormElement>("#spool")!;
 const note = document.querySelector<HTMLTextAreaElement>("#note")!;
+const followBtn = document.querySelector<HTMLButtonElement>("#wind-follows")!;
+const globalBtn = document.querySelector<HTMLButtonElement>("#wind-global")!;
 
 let secret = loadSecret();
-let liveCount = 0;
+let nip07Pubkey: string | null = null;
 let seedCleared = false;
+let followPubkeys: string[] = [];
+let followsLoaded = false;
+let wind: WindMode = "global";
+let profileTick = 0;
 
 function ownPubkey(): string | undefined {
-  return secret ? hexPubkey(secret) : undefined;
+  if (secret) return hexPubkey(secret);
+  return nip07Pubkey ?? undefined;
+}
+
+function currentNpub(): string | null {
+  if (secret) return npubFromSecret(secret);
+  if (nip07Pubkey) return npubFromHex(nip07Pubkey);
+  return null;
+}
+
+function canPost(): boolean {
+  return Boolean(secret || nip07Pubkey);
+}
+
+function signerLabel(): string {
+  return nip07Pubkey ? "nip07" : "nsec";
 }
 
 function refreshIdentity(): void {
-  setIdentity(secret ? npubFromSecret(secret) : null, Boolean(secret));
+  setIdentity(currentNpub(), canPost(), signerLabel());
+}
+
+function storedWind(): WindMode | null {
+  const value = localStorage.getItem(WIND_KEY);
+  return value === "follows" || value === "global" ? value : null;
+}
+
+function persistWind(mode: WindMode): void {
+  localStorage.setItem(WIND_KEY, mode);
 }
 
 function maybeClearSeed(): void {
@@ -48,26 +93,97 @@ function maybeClearSeed(): void {
   clearSeeds(ownPubkey());
 }
 
+function applyWind(mode: WindMode, follows?: string[], replace = true): void {
+  wind = mode;
+  if (follows) followPubkeys = follows;
+
+  if (mode === "follows") {
+    const self = ownPubkey();
+    if (!self) {
+      setWindMode("global");
+      session.setAuthors(undefined);
+      setStatus("Hold a string to follow people. Open wind until then.");
+      return;
+    }
+    setWindMode("follows", followsLoaded ? followPubkeys.length : undefined);
+    if (!followsLoaded) {
+      setStatus("Reading your follow list…");
+      return;
+    }
+    if (followPubkeys.length === 0) {
+      setStatus("No follow list on these relays yet. Open wind until you follow people.");
+      if (replace) {
+        session.setAuthors(undefined);
+      }
+      return;
+    }
+    if (replace) clearLiveNotes(ownPubkey());
+    session.setAuthors([...new Set([self, ...followPubkeys])].slice(0, 120));
+    setStatus(`Follow wind — ${followPubkeys.length} people`);
+    return;
+  }
+
+  setWindMode("global");
+  if (replace) clearLiveNotes(ownPubkey());
+  session.setAuthors(undefined);
+  setStatus("Open wind. Anyone on these relays can clip a note.");
+}
+
+function afterKey(): void {
+  refreshIdentity();
+  const pubkey = ownPubkey();
+  if (!pubkey) return;
+  followsLoaded = false;
+  followPubkeys = [];
+  if (storedWind() !== "global") {
+    applyWind("follows", undefined, false);
+    session.loadFollows(pubkey);
+  }
+}
+
+async function connectNip07(): Promise<void> {
+  if (!window.nostr?.getPublicKey) {
+    setStatus("No NIP-07 signer in this browser.");
+    return;
+  }
+  nip07Pubkey = await window.nostr.getPublicKey();
+  secret = null;
+  preferNip07();
+  setStatus("Extension is holding the string. Kite never sees the nsec.");
+  dialog.close();
+  afterKey();
+}
+
 identityBtn.addEventListener("click", () => {
   dialog.showModal();
 });
 
 generateBtn.addEventListener("click", () => {
   secret = generateKey();
-  saveSecret(secret);
-  refreshIdentity();
-  setStatus("A new string is in your hand. Notes you release are yours.");
+  nip07Pubkey = null;
+  saveSecret(secret, rememberChecked());
+  setStatus(
+    rememberChecked()
+      ? "A new string is in your hand, kept on this machine."
+      : "A new string is in your hand for this session only.",
+  );
   dialog.close();
+  afterKey();
 });
 
 importBtn.addEventListener("click", () => {
   try {
     secret = decodeSecret(nsecInput.value);
-    saveSecret(secret);
+    nip07Pubkey = null;
+    saveSecret(secret, rememberChecked());
     nsecInput.value = "";
-    refreshIdentity();
-    setStatus("String held. Relays already know this key if you have used it.");
+    setStatus(
+      rememberChecked()
+        ? "String held on this machine."
+        : "String held for this session. Closing the desk forgets it.",
+    );
     dialog.close();
+    afterKey();
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Could not read that key.");
   }
@@ -76,9 +192,38 @@ importBtn.addEventListener("click", () => {
 forgetBtn.addEventListener("click", () => {
   forgetSecret();
   secret = null;
+  nip07Pubkey = null;
+  followPubkeys = [];
+  followsLoaded = false;
   refreshIdentity();
+  persistWind("global");
+  applyWind("global");
   setStatus("Listening only. The string is back in the drawer.");
   dialog.close();
+});
+
+nip07Btn.addEventListener("click", () => {
+  void connectNip07().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : "The extension would not sign.");
+  });
+});
+
+followBtn.addEventListener("click", () => {
+  const pubkey = ownPubkey();
+  if (!pubkey) {
+    dialog.showModal();
+    setStatus("Hold a string before you follow wind.");
+    return;
+  }
+  persistWind("follows");
+  followsLoaded = followPubkeys.length > 0;
+  applyWind("follows");
+  session.loadFollows(pubkey);
+});
+
+globalBtn.addEventListener("click", () => {
+  persistWind("global");
+  applyWind("global");
 });
 
 note.addEventListener("input", () => {
@@ -90,13 +235,13 @@ spool.addEventListener("submit", async (event) => {
   event.preventDefault();
   const content = note.value.trim();
   if (!content) return;
-  if (!secret) {
+  if (!canPost()) {
     dialog.showModal();
     setStatus("Hold a string before you release a note.");
     return;
   }
   try {
-    const signed = signNote(secret, content);
+    const signed = secret ? signNote(secret, content) : await signWithNip07(content);
     await publish(signed);
     note.value = "";
     note.style.height = "auto";
@@ -116,23 +261,15 @@ spool.addEventListener("submit", async (event) => {
   }
 });
 
-for (const seed of seedNotes) {
-  upsertNote(seed);
-}
-refreshIdentity();
-paintFlags(ownPubkey());
-
 const session = listen({
   onNote(n) {
-    if (!seedCleared) {
-      maybeClearSeed();
-    }
-    liveCount += 1;
+    maybeClearSeed();
     upsertNote(n, ownPubkey());
-    if (liveCount === 1 || liveCount % 8 === 0) {
+    profileTick += 1;
+    if (profileTick === 1 || profileTick % 8 === 0) {
       session.loadProfiles(knownPubkeys());
     }
-    setStatus(`${liveCount} notes on the string`);
+    setStatus(`${wind === "follows" ? "Follow wind" : "Open wind"} — notes on the string`);
   },
   onProfile(pubkey, profile) {
     setProfile(pubkey, profile, ownPubkey());
@@ -145,10 +282,34 @@ const session = listen({
   },
   onReady() {
     session.loadProfiles(knownPubkeys());
-    if (liveCount === 0) {
-      setStatus("Relays are quiet. Seed notes stay until the wind picks up.");
-    }
+  },
+  onFollows(pubkeys) {
+    followsLoaded = true;
+    followPubkeys = pubkeys;
+    if (wind === "follows") applyWind("follows", pubkeys);
   },
 });
+
+for (const seed of seedNotes) {
+  upsertNote(seed);
+}
+setRememberChecked(rememberPreferred());
+showNip07(hasNip07());
+refreshIdentity();
+paintFlags(ownPubkey());
+setWindMode(ownPubkey() && storedWind() !== "global" ? "follows" : "global");
+
+if (signerPref() === "nip07" && hasNip07()) {
+  void connectNip07().catch(() => {
+    nip07Pubkey = null;
+    refreshIdentity();
+    applyWind("global", undefined, false);
+  });
+} else if (ownPubkey() && storedWind() !== "global") {
+  applyWind("follows", undefined, false);
+  session.loadFollows(ownPubkey()!);
+} else {
+  applyWind("global", undefined, false);
+}
 
 window.addEventListener("beforeunload", () => session.close());
