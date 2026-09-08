@@ -273,18 +273,22 @@ body {
   color: var(--fg-mute);
 }
 
-.flags {
+.flags-port {
   position: absolute;
   inset: 86px 28px 12px var(--string-x);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.flags {
+  position: relative;
   margin: 0;
-  padding: 0 0 24px;
+  padding: 0;
   list-style: none;
-  overflow-y: auto;
-  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  scroll-behavior: smooth;
+  will-change: transform;
 }
 
 .flag {
@@ -295,7 +299,6 @@ body {
   color: #241c1a;
   transform: rotate(var(--tilt, var(--flag-tilt)));
   transform-origin: left center;
-  animation: clip-in 640ms ease both;
 }
 
 .flag::before {
@@ -348,6 +351,24 @@ body {
   text-decoration: underline;
 }
 
+.flag:hover {
+  z-index: 2;
+}
+
+.flag-spacer {
+  flex: none;
+  width: 1px;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.flag-spacer::before {
+  content: none;
+}
+
 .chip {
   display: inline-block;
   margin-right: 8px;
@@ -356,17 +377,6 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--magenta);
-}
-
-@keyframes clip-in {
-  from {
-    opacity: 0;
-    transform: translateX(-18px) rotate(var(--tilt, var(--flag-tilt)));
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0) rotate(var(--tilt, var(--flag-tilt)));
-  }
 }
 
 .ground {
@@ -562,7 +572,7 @@ dialog::backdrop {
     grid-column: 1;
   }
 
-  .flags {
+  .flags-port {
     inset: 86px 16px 12px 18%;
   }
 }
@@ -570,8 +580,7 @@ dialog::backdrop {
 @media (prefers-reduced-motion: reduce) {
   .string,
   .kite-mark,
-  #relays li.live .gust span,
-  .flag {
+  #relays li.live .gust span {
     animation: none;
   }
 }
