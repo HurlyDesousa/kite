@@ -293,6 +293,7 @@ body {
 
 .flag {
   position: relative;
+  flex: 0 0 auto;
   max-width: 560px;
   padding: 14px 16px 14px 20px;
   background: #efe6d8;
@@ -353,20 +354,6 @@ body {
 
 .flag:hover {
   z-index: 2;
-}
-
-.flag-spacer {
-  flex: none;
-  width: 1px;
-  max-width: none;
-  padding: 0;
-  margin: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-
-.flag-spacer::before {
-  content: none;
 }
 
 .chip {

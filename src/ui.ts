@@ -23,7 +23,7 @@ const relayState = new Map<string, RelayState>();
 const flagEls = new Map<string, HTMLLIElement>();
 
 const DRIFT_PX_PER_SEC = 22;
-const FLAG_GAP = 18;
+const MAX_PENDING = 48;
 
 let currentNpub: string | null = null;
 let currentMode: WindMode = "global";
@@ -32,10 +32,10 @@ let hoverPause = false;
 let driftY = 0;
 let driftLast = 0;
 let driftRaf = 0;
+let streamPrimed = false;
 
-const spacer = document.createElement("li");
-spacer.className = "flag-spacer";
-spacer.setAttribute("aria-hidden", "true");
+const pending: Note[] = [];
+const pendingIds = new Set<string>();
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -104,77 +104,115 @@ function renderFlag(note: Note): HTMLLIElement {
   return li;
 }
 
-function refreshFlag(el: HTMLLIElement, note: Note): void {
-  const who = el.querySelector(".who");
-  if (who) who.textContent = displayName(note.pubkey);
-  const time = el.querySelector("time");
-  if (time instanceof HTMLTimeElement) {
-    time.dateTime = new Date(note.createdAt * 1000).toISOString();
-    time.textContent = relativeTime(note.createdAt);
-  }
-}
-
 function applyDrift(): void {
   flagsEl.style.transform = `translate3d(0, ${driftY}px, 0)`;
 }
 
-function ensureSpacer(): void {
-  spacer.style.height = `${Math.max(flagPort.clientHeight, 1)}px`;
-  if (spacer.parentElement !== flagsEl) flagsEl.append(spacer);
+function portRect(): DOMRect {
+  return flagPort.getBoundingClientRect();
 }
 
 function firstFlag(): HTMLLIElement | null {
   for (const child of flagsEl.children) {
-    if (child === spacer) continue;
     if (child instanceof HTMLLIElement && child.classList.contains("flag")) return child;
   }
   return null;
 }
 
-function parkNewFlag(el: HTMLLIElement): void {
-  flagsEl.insertBefore(el, spacer);
+function intersectsPort(el: Element): boolean {
+  const port = portRect();
+  const rect = el.getBoundingClientRect();
+  return rect.bottom > port.top && rect.top < port.bottom;
 }
 
 function flagFromEvent(event: Event): HTMLElement | null {
   const target = event.target;
   if (!(target instanceof Element)) return null;
   const flag = target.closest(".flag");
-  return flag instanceof HTMLElement && flag !== spacer && flagsEl.contains(flag) ? flag : null;
+  return flag instanceof HTMLElement && flagsEl.contains(flag) ? flag : null;
 }
 
 function readingNote(): boolean {
   return Boolean(flagPort.querySelector(".flag:hover, .flag:focus-within"));
 }
 
-function recyclePassedFlags(): void {
-  const portTop = flagPort.getBoundingClientRect().top;
-  for (let i = 0; i < 8; i += 1) {
-    const el = firstFlag();
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.bottom > portTop) return;
-    const shift = el.offsetHeight + FLAG_GAP;
-    flagsEl.append(el);
-    driftY += shift;
+function retireFlag(el: HTMLLIElement): void {
+  const id = el.dataset.id;
+  const next = el.nextElementSibling as HTMLElement | null;
+  const nextTop = next?.offsetTop;
+  el.remove();
+  if (id) {
+    flagEls.delete(id);
+    notes.delete(id);
+  }
+  if (next && nextTop != null) driftY += nextTop - next.offsetTop;
+  if (flagEls.size === 0) {
+    driftY = 0;
+    streamPrimed = false;
   }
   applyDrift();
+}
+
+function retirePassedFlags(): void {
+  const top = portRect().top;
+  for (let i = 0; i < 12; i += 1) {
+    const el = firstFlag();
+    if (!el) return;
+    if (el.getBoundingClientRect().bottom > top) return;
+    retireFlag(el);
+  }
+}
+
+function parkFlag(el: HTMLLIElement): void {
+  flagsEl.append(el);
+  if (!streamPrimed) {
+    if (el.getBoundingClientRect().bottom >= portRect().bottom) streamPrimed = true;
+    return;
+  }
+  const port = portRect();
+  const rect = el.getBoundingClientRect();
+  if (rect.top < port.bottom) {
+    el.style.marginTop = `${Math.ceil(port.bottom - rect.top)}px`;
+  }
+}
+
+function flushPending(ownPubkey?: string): void {
+  while (pending.length > 0) {
+    const note = pending[0];
+    pending.shift();
+    pendingIds.delete(note.id);
+    if (flagEls.has(note.id)) continue;
+    const el = renderFlag(note);
+    flagEls.set(note.id, el);
+    el.classList.toggle("own", Boolean(ownPubkey && note.pubkey === ownPubkey));
+    parkFlag(el);
+  }
+}
+
+function queueIncoming(note: Note): void {
+  if (flagEls.has(note.id) || pendingIds.has(note.id)) return;
+  pending.push(note);
+  pendingIds.add(note.id);
+  while (pending.length > MAX_PENDING) {
+    const dropped = pending.shift();
+    if (dropped) pendingIds.delete(dropped.id);
+  }
 }
 
 function driftTick(now: number): void {
   const dt = driftLast ? Math.min(0.048, (now - driftLast) / 1000) : 0;
   driftLast = now;
-  ensureSpacer();
   if (!reduceMotion.matches && !hoverPause && flagEls.size > 0) {
     driftY -= DRIFT_PX_PER_SEC * dt;
-    recyclePassedFlags();
     applyDrift();
+    retirePassedFlags();
+    flushPending();
   }
   driftRaf = requestAnimationFrame(driftTick);
 }
 
 function startDrift(): void {
   if (driftRaf) return;
-  ensureSpacer();
   flagPort.addEventListener("mouseover", (event) => {
     if (flagFromEvent(event)) hoverPause = true;
   });
@@ -192,15 +230,13 @@ function startDrift(): void {
     (event) => {
       event.preventDefault();
       driftY -= event.deltaY;
-      recyclePassedFlags();
       applyDrift();
+      retirePassedFlags();
+      flushPending();
     },
     { passive: false },
   );
-  window.addEventListener("resize", () => {
-    ensureSpacer();
-    applyDrift();
-  });
+  window.addEventListener("resize", () => applyDrift());
   driftRaf = requestAnimationFrame(driftTick);
 }
 
@@ -221,35 +257,12 @@ function pushBar(): void {
 }
 
 export function paintFlags(ownPubkey?: string): void {
-  ensureSpacer();
-  const snapshot = sortNotes();
-  const keep = new Set(snapshot.map((note) => note.id));
-
   for (const [id, el] of flagEls) {
-    if (keep.has(id)) continue;
-    const portTop = flagPort.getBoundingClientRect().top;
-    const above = el.getBoundingClientRect().bottom <= portTop;
-    const shift = el.offsetHeight + FLAG_GAP;
-    el.remove();
-    flagEls.delete(id);
-    if (above) driftY += shift;
-  }
-
-  if (flagEls.size === 0) driftY = 0;
-
-  for (const note of snapshot) {
-    let el = flagEls.get(note.id);
-    if (el) {
-      refreshFlag(el, note);
-      el.classList.toggle("own", Boolean(ownPubkey && note.pubkey === ownPubkey));
-      continue;
-    }
-    el = renderFlag(note);
-    flagEls.set(note.id, el);
+    const note = notes.get(id);
+    if (!note) continue;
     el.classList.toggle("own", Boolean(ownPubkey && note.pubkey === ownPubkey));
-    parkNewFlag(el);
   }
-
+  flushPending(ownPubkey);
   applyDrift();
   pushBar();
 }
@@ -258,20 +271,44 @@ export function upsertNote(note: Note, ownPubkey?: string): void {
   const isNew = !notes.has(note.id);
   notes.set(note.id, note);
   if (isNew && !note.local) liveCount += 1;
-  paintFlags(ownPubkey);
+  const existing = flagEls.get(note.id);
+  if (existing) {
+    existing.classList.toggle("own", Boolean(ownPubkey && note.pubkey === ownPubkey));
+    if (!intersectsPort(existing)) {
+      const who = existing.querySelector(".who");
+      if (who) who.textContent = displayName(note.pubkey);
+    }
+    pushBar();
+    return;
+  }
+  queueIncoming(note);
+  flushPending(ownPubkey);
+  pushBar();
 }
 
-export function clearSeeds(ownPubkey?: string): void {
+export function clearSeeds(_ownPubkey?: string): void {
   for (const [id, note] of notes) {
     if (note.local) notes.delete(id);
   }
-  paintFlags(ownPubkey);
+  streamPrimed = true;
+  pushBar();
 }
 
 export function clearLiveNotes(ownPubkey?: string): void {
-  notes.clear();
-  liveCount = 0;
-  driftY = 0;
+  pending.length = 0;
+  pendingIds.clear();
+  for (const [id, el] of [...flagEls]) {
+    if (intersectsPort(el)) continue;
+    if (el.getBoundingClientRect().bottom <= portRect().top) retireFlag(el);
+    else {
+      el.remove();
+      flagEls.delete(id);
+    }
+  }
+  for (const id of [...notes.keys()]) {
+    if (!flagEls.has(id)) notes.delete(id);
+  }
+  liveCount = [...notes.values()].filter((note) => !note.local).length;
   paintFlags(ownPubkey);
 }
 
@@ -281,6 +318,7 @@ export function setProfile(pubkey: string, profile: Profile, _ownPubkey?: string
   for (const [id, el] of flagEls) {
     const note = notes.get(id);
     if (!note || note.pubkey !== pubkey) continue;
+    if (intersectsPort(el)) continue;
     const who = el.querySelector(".who");
     if (who) who.textContent = name;
   }
