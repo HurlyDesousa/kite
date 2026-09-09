@@ -111,26 +111,26 @@ export function preferNip07(): void {
   localStorage.setItem(SIGNER, "nip07");
 }
 
-export function signNote(secret: Uint8Array, content: string) {
+export function signNote(secret: Uint8Array, content: string, tags: string[][] = []) {
   return finalizeEvent(
     {
       kind: 1,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [],
+      tags,
       content,
     },
     secret,
   );
 }
 
-export async function signWithNip07(content: string): Promise<Event> {
+export async function signWithNip07(content: string, tags: string[][] = []): Promise<Event> {
   if (!window.nostr?.signEvent) {
     throw new Error("No NIP-07 signer is available.");
   }
   return window.nostr.signEvent({
     kind: 1,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [],
+    tags,
     content,
   }) as Promise<Event>;
 }

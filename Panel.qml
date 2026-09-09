@@ -113,7 +113,11 @@ Panel {
                 Text {
                     width: parent.width
                     text: root.latest.npub
-                        ? ((root.latest.mode === "follows" ? "Follow wind · " : "Open wind · ") + root.latest.npub)
+                        ? ((root.latest.mode === "follows"
+                            ? "Follow wind · "
+                            : root.latest.mode === "one"
+                              ? "This string · "
+                              : "Open wind · ") + root.latest.npub)
                         : "Listening. Hold a string in the desk to follow people."
                     color: root.barForeground
                     opacity: 0.7

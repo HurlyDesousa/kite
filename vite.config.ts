@@ -28,7 +28,7 @@ function writeBarState(raw: string): void {
     : [];
   const payload = {
     npub: typeof parsed.npub === "string" ? parsed.npub.slice(0, 80) : "",
-    mode: parsed.mode === "follows" ? "follows" : "global",
+    mode: parsed.mode === "follows" || parsed.mode === "one" ? parsed.mode : "global",
     count: Number(parsed.count) || 0,
     notes,
   };

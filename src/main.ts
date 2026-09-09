@@ -14,7 +14,11 @@ import {
   rememberPreferred,
   signerPref,
 } from "./keys";
-import { listen, publish } from "./nostr";
+import {
+  listen,
+  publish,
+  replyTags,
+} from "./nostr";
 import type { WindMode } from "./types";
 import {
   knownPubkeys,
@@ -27,10 +31,15 @@ import {
   upsertNote,
   clearSeeds,
   clearLiveNotes,
+  wipeFlags,
   setWindMode,
   showNip07,
   rememberChecked,
   setRememberChecked,
+  bindDesk,
+  nameOf,
+  currentReply,
+  clearReply,
 } from "./ui";
 
 const WIND_KEY = "kite.wind";
@@ -46,6 +55,7 @@ const spool = document.querySelector<HTMLFormElement>("#spool")!;
 const note = document.querySelector<HTMLTextAreaElement>("#note")!;
 const followBtn = document.querySelector<HTMLButtonElement>("#wind-follows")!;
 const globalBtn = document.querySelector<HTMLButtonElement>("#wind-global")!;
+const oneBtn = document.querySelector<HTMLButtonElement>("#wind-one")!;
 
 let secret = loadSecret();
 let nip07Pubkey: string | null = null;
@@ -53,6 +63,7 @@ let seedCleared = false;
 let followPubkeys: string[] = [];
 let followsLoaded = false;
 let wind: WindMode = "global";
+let thisPubkey: string | undefined;
 let profileTick = 0;
 
 function ownPubkey(): string | undefined {
@@ -75,7 +86,7 @@ function signerLabel(): string {
 }
 
 function refreshIdentity(): void {
-  setIdentity(currentNpub(), canPost(), signerLabel());
+  setIdentity(currentNpub(), canPost(), signerLabel(), ownPubkey());
 }
 
 function storedWind(): WindMode | null {
@@ -83,7 +94,7 @@ function storedWind(): WindMode | null {
   return value === "follows" || value === "global" ? value : null;
 }
 
-function persistWind(mode: WindMode): void {
+function persistWind(mode: "follows" | "global"): void {
   localStorage.setItem(WIND_KEY, mode);
 }
 
@@ -93,9 +104,30 @@ function maybeClearSeed(): void {
   clearSeeds(ownPubkey());
 }
 
+function listenTo(pubkey: string): void {
+  thisPubkey = pubkey;
+  wind = "one";
+  wipeFlags(ownPubkey());
+  session.setAuthors([pubkey]);
+  session.loadProfiles([pubkey]);
+  setWindMode("one", undefined, nameOf(pubkey));
+  setStatus(`This string — ${nameOf(pubkey)}`);
+}
+
 function applyWind(mode: WindMode, follows?: string[], replace = true): void {
   wind = mode;
   if (follows) followPubkeys = follows;
+  if (mode !== "one") thisPubkey = undefined;
+  if (mode !== "one") clearReply();
+
+  if (mode === "one" && thisPubkey) {
+    if (replace) wipeFlags(ownPubkey());
+    session.setAuthors([thisPubkey]);
+    session.loadProfiles([thisPubkey]);
+    setWindMode("one", undefined, nameOf(thisPubkey));
+    setStatus(`This string — ${nameOf(thisPubkey)}`);
+    return;
+  }
 
   if (mode === "follows") {
     const self = ownPubkey();
@@ -195,6 +227,7 @@ forgetBtn.addEventListener("click", () => {
   nip07Pubkey = null;
   followPubkeys = [];
   followsLoaded = false;
+  thisPubkey = undefined;
   refreshIdentity();
   persistWind("global");
   applyWind("global");
@@ -226,6 +259,10 @@ globalBtn.addEventListener("click", () => {
   applyWind("global");
 });
 
+oneBtn.addEventListener("click", () => {
+  if (thisPubkey) listenTo(thisPubkey);
+});
+
 note.addEventListener("input", () => {
   note.style.height = "auto";
   note.style.height = `${Math.min(note.scrollHeight, 120)}px`;
@@ -241,7 +278,9 @@ spool.addEventListener("submit", async (event) => {
     return;
   }
   try {
-    const signed = secret ? signNote(secret, content) : await signWithNip07(content);
+    const reply = currentReply();
+    const tags = reply ? replyTags(reply) : [];
+    const signed = secret ? signNote(secret, content, tags) : await signWithNip07(content, tags);
     await publish(signed);
     note.value = "";
     note.style.height = "auto";
@@ -251,11 +290,13 @@ spool.addEventListener("submit", async (event) => {
         pubkey: signed.pubkey,
         createdAt: signed.created_at,
         content: signed.content,
-        reply: false,
+        reply: Boolean(reply),
+        replyTo: reply?.id,
       },
       ownPubkey(),
     );
-    setStatus("Released. The wind has it.");
+    clearReply();
+    setStatus(reply ? `Reply clipped to ${nameOf(reply.pubkey)}.` : "Released. The wind has it.");
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "The wind would not take it.");
   }
@@ -269,7 +310,9 @@ const session = listen({
     if (profileTick === 1 || profileTick % 8 === 0) {
       session.loadProfiles(knownPubkeys());
     }
-    setStatus(`${wind === "follows" ? "Follow wind" : "Open wind"} — notes on the string`);
+    setStatus(
+      `${wind === "follows" ? "Follow wind" : wind === "one" ? "This string" : "Open wind"} — notes on the string`,
+    );
   },
   onProfile(pubkey, profile) {
     setProfile(pubkey, profile, ownPubkey());
@@ -287,6 +330,13 @@ const session = listen({
     followsLoaded = true;
     followPubkeys = pubkeys;
     if (wind === "follows") applyWind("follows", pubkeys);
+  },
+});
+
+bindDesk({
+  listenTo,
+  pickReply(note) {
+    if (note) setStatus(`Replying to ${nameOf(note.pubkey)}. Click the flag again to let go.`);
   },
 });
 

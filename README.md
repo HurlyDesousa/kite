@@ -22,7 +22,8 @@ Kite follows the marketplace contract those plugins use: `manifest.json` at the 
 
 - A vertical string instead of a column of cards
 - Relays drawn as wind on the left, not a settings table
-- **Follow** wind reads your kind-3 list; **Open** wind is the public gust
+- **Follow** wind reads your kind-3 list; click a name for **This** string; **Open** wind is the public gust
+- Click a flag to reply; Release clips the reply to that note
 - Compose from the spool at the ground — the button is **Release**
 - Omarchy paints the sky: `theme-set` rewrites colours from `colors.toml`
 - The bar chip opens a KeyboardPanel with the latest notes, then **Open desk**

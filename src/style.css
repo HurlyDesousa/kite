@@ -85,6 +85,10 @@ body {
   gap: 6px;
 }
 
+.wind-mode:has(#wind-one:not([hidden])) {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .wind-mode button {
   padding: 7px 8px;
   border: 1px solid var(--sel);
@@ -321,6 +325,10 @@ body {
   outline: 1px solid var(--accent);
 }
 
+.flag.replying {
+  outline: 1px dashed #9a4630;
+}
+
 .flag header {
   display: flex;
   justify-content: space-between;
@@ -331,7 +339,31 @@ body {
 }
 
 .flag .who {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #9a4630;
+  cursor: pointer;
+  font: inherit;
+}
+
+.flag .who:hover,
+.flag .who:focus-visible {
+  text-decoration: underline;
+}
+
+.mention {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9a4630;
+  cursor: pointer;
+  font: inherit;
+}
+
+.mention:hover,
+.mention:focus-visible {
+  text-decoration: underline;
 }
 
 .flag p {

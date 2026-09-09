@@ -22,6 +22,13 @@ export function npubOf(pubkeyHex: string): string {
   return nip19.npubEncode(pubkeyHex);
 }
 
+function replyToOf(event: Event): string | undefined {
+  const marker = event.tags.find((tag) => tag[0] === "e" && tag[3] === "reply" && tag[1]);
+  if (marker?.[1]) return marker[1];
+  const first = event.tags.find((tag) => tag[0] === "e" && tag[1]);
+  return first?.[1];
+}
+
 function toNote(event: Event): Note {
   return {
     id: event.id,
@@ -29,6 +36,7 @@ function toNote(event: Event): Note {
     createdAt: event.created_at,
     content: event.content,
     reply: event.tags.some((tag) => tag[0] === "e"),
+    replyTo: replyToOf(event),
   };
 }
 
@@ -152,6 +160,14 @@ export function listen(handlers: {
       );
     },
   };
+}
+
+export function replyTags(note: Note): string[][] {
+  const tags: string[][] = [];
+  if (note.replyTo) tags.push(["e", note.replyTo, "", "root"]);
+  tags.push(["e", note.id, "", "reply"]);
+  tags.push(["p", note.pubkey]);
+  return tags;
 }
 
 export async function publish(event: Event, relays = RELAYS): Promise<void> {

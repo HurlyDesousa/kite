@@ -4,6 +4,7 @@ export type Note = {
   createdAt: number;
   content: string;
   reply: boolean;
+  replyTo?: string;
   local?: boolean;
 };
 
@@ -18,6 +19,6 @@ export type Profile = {
   displayName?: string;
 };
 
-export type WindMode = "global" | "follows";
+export type WindMode = "global" | "follows" | "one";
 
 export type Signer = "none" | "nsec" | "nip07";

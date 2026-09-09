@@ -35,7 +35,7 @@ def sanitize(payload: object) -> dict:
     npub = payload.get("npub")
     return {
         "npub": str(npub)[:80] if isinstance(npub, str) else "",
-        "mode": "follows" if payload.get("mode") == "follows" else "global",
+        "mode": "one" if payload.get("mode") == "one" else "follows" if payload.get("mode") == "follows" else "global",
         "count": int(payload.get("count") or 0),
         "notes": notes,
     }

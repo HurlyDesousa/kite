@@ -16,7 +16,7 @@ let timer: number | undefined;
 function sanitize(state: BarState): BarState {
   return {
     npub: state.npub.slice(0, 80),
-    mode: state.mode === "follows" ? "follows" : "global",
+    mode: state.mode === "follows" || state.mode === "one" ? state.mode : "global",
     count: Number.isFinite(state.count) ? Math.max(0, Math.floor(state.count)) : 0,
     notes: state.notes.slice(0, MAX_NOTES).map((note) => ({
       who: String(note.who || "note").slice(0, 48),
