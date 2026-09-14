@@ -9,6 +9,7 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+HOST = os.environ.get("KITE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("KITE_PORT", "7423"))
 WWW = Path(os.environ.get("KITE_WWW", Path.home() / ".local/share/kite/www")).resolve()
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "kite"
@@ -76,8 +77,8 @@ def main() -> int:
         print(f"kite-serve: missing web root {WWW}", file=sys.stderr)
         return 1
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"kite-serve: http://127.0.0.1:{PORT}  www={WWW}", file=sys.stderr)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"kite-serve: http://{HOST}:{PORT}  www={WWW}", file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

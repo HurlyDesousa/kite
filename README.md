@@ -87,6 +87,31 @@ If you still have the old nested plugin:
 omarchy plugin remove hurly.kite
 ```
 
+## Public demo (Proxmox / Caddy)
+
+The hosted desk at **kite.s-w.art** is a static build of this repo. On a guest VM (for example Proxmox VM 122), run nginx in Docker so the proxy can reach the app on the LAN.
+
+```bash
+git clone https://github.com/HurlyDesousa/kite.git
+cd kite
+docker compose up -d --build
+```
+
+| Setting | Default |
+| --- | --- |
+| Listen | `0.0.0.0:8080` inside the container (host maps `8080:8080`) |
+| Health | `GET /health` → `200 ok` |
+| Bar state stub | `POST /kite/state` → `204` (no persistence in Docker; Omarchy bar uses a local `kite-serve`) |
+
+Point Caddy (or another reverse proxy on the host) at `http://<guest-lan-ip>:8080`. No secrets are baked into the image.
+
+Local Node/Vite dev still defaults to **127.0.0.1:7423**. Override with `HOST` and `PORT` (or `KITE_HOST` / `KITE_PORT` for `kite-serve`):
+
+```bash
+HOST=0.0.0.0 PORT=7423 npm run dev
+KITE_HOST=0.0.0.0 KITE_PORT=7423 kite-serve
+```
+
 ## Dev desk
 
 ```bash

@@ -88,16 +88,19 @@ function stateMiddleware(req: Connect.IncomingMessage, res: Connect.ServerRespon
   });
 }
 
+const host = process.env.HOST ?? "127.0.0.1";
+const port = Number(process.env.PORT ?? "7423");
+
 export default defineConfig({
   plugins: [kiteStatePlugin()],
   server: {
-    host: "127.0.0.1",
-    port: 7423,
+    host,
+    port,
     strictPort: true,
   },
   preview: {
-    host: "127.0.0.1",
-    port: 7423,
+    host,
+    port,
     strictPort: true,
   },
 });
