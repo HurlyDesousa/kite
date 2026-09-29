@@ -1,10 +1,31 @@
 import QtQuick
+import Quickshell.Wayland
 import qs.Ui
 
 // Marketplace bar-widget: Loader → Panel.qml, injectPanel, togglePanel.
+// The chip only takes a slot while a Kite desk window is open.
 BarWidget {
     id: root
     moduleName: "io.github.hurlydesousa.kite"
+
+    // Webapp windows are named after their origin (brave-kite.localhost__-Default);
+    // an exact "Kite" title covers the desk opened as an app from anywhere else.
+    function isKiteWindow(toplevel) {
+        if (!toplevel) return false
+        return /(^|-)kite\.(localhost|s-w\.art)__/.test(String(toplevel.appId || ""))
+            || toplevel.title === "Kite"
+    }
+
+    readonly property bool kiteRunning: {
+        var windows = ToplevelManager.toplevels.values
+        for (var i = 0; i < windows.length; i++) {
+            if (root.isKiteWindow(windows[i])) return true
+        }
+        return false
+    }
+
+    visible: kiteRunning
+    onKiteRunningChanged: if (!kiteRunning) root.close()
 
     function injectPanel() {
         var target = panelLoader.item
@@ -63,8 +84,8 @@ BarWidget {
     BarIconButton {
         id: button
         bar: root.bar
-        text: "󰠳"
-        tooltipText: "Kite"
+        text: "󱓝"
+        tooltipText: "Kite is open"
         onPressed: function(b) {
             if (b !== Qt.RightButton) root.togglePanel()
         }

@@ -84,14 +84,24 @@
       <form method="dialog" class="keys-sheet">
         <h2>The string</h2>
         <p>
-          Kite never sends your key to a server. Prefer a NIP-07 extension, or
-          keep an nsec in this session only. Check the box only if you want it
-          on this machine. For a vault that never touches the browser, use
-          Omostrich or a phone signer.
+          Kite never sends your key to a server. Lock your nsec to a YubiKey,
+          sign with a NIP-07 extension, or keep it in this session only. Check
+          the box only if you want it on this machine unsealed. For a vault
+          that never touches the browser, use Omostrich or a phone signer.
         </p>
         <p class="npub-line">
           Public <code id="dialog-npub">none</code>
         </p>
+        <section class="yubikey" aria-labelledby="yubikey-title">
+          <h3 id="yubikey-title">YubiKey</h3>
+          <p id="yubikey-status" aria-live="polite"></p>
+          <div class="yubikey-actions">
+            <button id="yubikey-unlock" type="button" hidden>Unlock with YubiKey</button>
+            <button id="yubikey-lock" type="button" hidden>Lock to YubiKey</button>
+            <button id="yubikey-relock" type="button" hidden>Lock now</button>
+            <button id="yubikey-remove" type="button" hidden>Remove lock</button>
+          </div>
+        </section>
         <label class="import">
           Import nsec
           <input id="nsec-input" type="password" placeholder="nsec1…" spellcheck="false" />

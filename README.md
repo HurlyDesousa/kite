@@ -26,7 +26,7 @@ Kite follows the marketplace contract those plugins use: `manifest.json` at the 
 - Click a flag to reply; Release clips the reply to that note
 - Compose from the spool at the ground — the button is **Release**
 - Omarchy paints the sky: `theme-set` rewrites colours from `colors.toml`
-- The bar chip opens a KeyboardPanel with the latest notes, then **Open desk**
+- The bar chip appears only while a Kite desk window is open; it opens a KeyboardPanel with the latest notes, then **Open desk**
 
 You can listen with no key. Click the kite when you want to hold a string.
 
@@ -35,9 +35,18 @@ You can listen with no key. Click the kite when you want to hold a string.
 In order of how little the desk should see:
 
 1. **NIP-07 extension** — Kite never holds the nsec
-2. **Session nsec** — default; forgotten when the desk closes
-3. **Keep on this machine** — opt-in localStorage, same as the first Kite build
-4. **Omostrich / phone signer** — keep the vault there and treat Kite as a listener
+2. **YubiKey** — the nsec is sealed on this machine and opens only with a touch and the key's PIN
+3. **Session nsec** — default; forgotten when the desk closes
+4. **Keep on this machine** — opt-in localStorage, unsealed, same as the first Kite build
+5. **Omostrich / phone signer** — keep the vault there and treat Kite as a listener
+
+### YubiKey
+
+Click the kite, paste your nsec (or hold one first), and press **Lock to YubiKey**. The browser asks for the key's FIDO2 PIN and a touch; setup may ask twice. From then on the desk opens **locked**: it still knows your npub, so Follow wind works, and **Unlock with YubiKey** or pressing **Release** asks for one touch. **Lock now** drops the key from memory; **Remove lock** forgets the sealed copy.
+
+A YubiKey cannot sign Nostr events itself (they are Schnorr signatures over secp256k1), so Kite uses the key's FIDO2 `hmac-secret` through the WebAuthn PRF extension instead. PRF hands back a 32-byte secret only after the touch and PIN; HKDF turns it into an AES-256-GCM key that seals the nsec in this origin's localStorage (`kite.yubikey`). The plaintext nsec is removed from storage when you lock it and only ever lives in memory after that. Keep your own backup of the nsec: the sealed copy is useless without that particular YubiKey.
+
+Needs a YubiKey 5 (or any FIDO2 key with `hmac-secret`) and Brave, Chromium, or a recent Firefox, over https or `http://kite.localhost`. WebAuthn refuses IP-address origins, so the local desk no longer opens on `127.0.0.1`. Locks are per origin: lock once on the local desk and once on [kite.s-w.art](https://kite.s-w.art) if you use both.
 
 ## Install on Omarchy
 
@@ -47,7 +56,7 @@ Plugins run unsandboxed inside `omarchy-shell`. Read this repo before you add it
 omarchy plugin add https://github.com/HurlyDesousa/kite.git --enable
 ```
 
-That is the bar widget. It does not start Node. To also run the desk from `kite` / **Super+Shift+Alt+N**:
+That is the bar widget. It does not start Node, and it stays out of the bar until a Kite desk window is open. To also run the desk from `kite` / **Super+Shift+Alt+N** (it opens `http://kite.localhost:7423` as a webapp):
 
 ```bash
 git clone https://github.com/HurlyDesousa/kite.git
@@ -79,7 +88,7 @@ rm -f ~/.local/bin/kite ~/.local/bin/kite-serve ~/.local/bin/kite-sync-theme
 rm -f ~/.local/share/applications/kite.desktop
 ```
 
-The Super+Shift+Alt+N block in `~/.config/hypr/bindings.lua` (between `-- kite begin` and `-- kite end`) is yours to delete. Browser storage for an nsec, if you checked “keep on this machine”, lives in the Kite origin’s localStorage — open the desk and press **Forget**.
+The Super+Shift+Alt+N block in `~/.config/hypr/bindings.lua` (between `-- kite begin` and `-- kite end`) is yours to delete. Browser storage for an nsec, if you checked “keep on this machine”, lives in the Kite origin’s localStorage — open the desk and press **Forget**. A YubiKey lock lives there too; press **Remove lock**.
 
 If you still have the old nested plugin:
 
@@ -119,7 +128,7 @@ npm install
 npm run dev
 ```
 
-Then open [http://127.0.0.1:7423](http://127.0.0.1:7423). Dev and preview accept `POST /kite/state` so the bar can watch `~/.local/state/kite/latest.json`.
+Then open [http://kite.localhost:7423](http://kite.localhost:7423) (any `*.localhost` name reaches the loopback server; YubiKey login needs a name rather than `127.0.0.1`). Dev and preview accept `POST /kite/state` so the bar can watch `~/.local/state/kite/latest.json`.
 
 ```bash
 omarchy plugin validate .

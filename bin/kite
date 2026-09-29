@@ -3,7 +3,9 @@
 set -euo pipefail
 
 PORT="${KITE_PORT:-7423}"
-URL="http://127.0.0.1:${PORT}"
+# A name, not 127.0.0.1: WebAuthn (YubiKey login) rejects IP-address origins,
+# and kite.localhost gives the desk a webapp window class of its own.
+URL="http://kite.localhost:${PORT}"
 WWW="${KITE_WWW:-${HOME}/.local/share/kite/www}"
 STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/kite"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,7 +45,7 @@ if ! port_open; then
 fi
 
 if command -v omarchy-launch-or-focus-webapp >/dev/null 2>&1; then
-  exec omarchy-launch-or-focus-webapp Kite "${URL}"
+  exec omarchy-launch-or-focus-webapp 'kite\.localhost' "${URL}"
 fi
 
 if command -v omarchy-launch-webapp >/dev/null 2>&1; then

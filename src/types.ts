@@ -21,4 +21,4 @@ export type Profile = {
 
 export type WindMode = "global" | "follows" | "one";
 
-export type Signer = "none" | "nsec" | "nip07";
+export type Signer = "none" | "nsec" | "nip07" | "yubikey" | "locked";

@@ -7,6 +7,7 @@ import {
   npubFromHex,
   npubFromSecret,
   saveSecret,
+  shortNpub,
   signNote,
   signWithNip07,
   hasNip07,
@@ -19,7 +20,14 @@ import {
   publish,
   replyTags,
 } from "./nostr";
-import type { WindMode } from "./types";
+import type { Signer, WindMode } from "./types";
+import {
+  forgetVault,
+  loadVault,
+  lockToYubiKey,
+  unlockWithYubiKey,
+  yubikeyAvailable,
+} from "./yubikey";
 import {
   knownPubkeys,
   paintFlags,
@@ -40,6 +48,8 @@ import {
   nameOf,
   currentReply,
   clearReply,
+  showYubiKey,
+  setYubiKeyBusy,
 } from "./ui";
 
 const WIND_KEY = "kite.wind";
@@ -56,8 +66,14 @@ const note = document.querySelector<HTMLTextAreaElement>("#note")!;
 const followBtn = document.querySelector<HTMLButtonElement>("#wind-follows")!;
 const globalBtn = document.querySelector<HTMLButtonElement>("#wind-global")!;
 const oneBtn = document.querySelector<HTMLButtonElement>("#wind-one")!;
+const yubikeyUnlockBtn = document.querySelector<HTMLButtonElement>("#yubikey-unlock")!;
+const yubikeyLockBtn = document.querySelector<HTMLButtonElement>("#yubikey-lock")!;
+const yubikeyRelockBtn = document.querySelector<HTMLButtonElement>("#yubikey-relock")!;
+const yubikeyRemoveBtn = document.querySelector<HTMLButtonElement>("#yubikey-remove")!;
 
 let secret = loadSecret();
+let vault = loadVault();
+let heldByYubiKey = false;
 let nip07Pubkey: string | null = null;
 let seedCleared = false;
 let followPubkeys: string[] = [];
@@ -66,27 +82,41 @@ let wind: WindMode = "global";
 let thisPubkey: string | undefined;
 let profileTick = 0;
 
+// A locked vault still names its public key, so Follow wind can read the
+// follow list before the YubiKey is touched.
+function lockedPubkey(): string | undefined {
+  return !secret && !nip07Pubkey && vault ? vault.pubkey : undefined;
+}
+
 function ownPubkey(): string | undefined {
   if (secret) return hexPubkey(secret);
-  return nip07Pubkey ?? undefined;
+  return nip07Pubkey ?? lockedPubkey();
 }
 
 function currentNpub(): string | null {
-  if (secret) return npubFromSecret(secret);
-  if (nip07Pubkey) return npubFromHex(nip07Pubkey);
-  return null;
+  const pubkey = ownPubkey();
+  return pubkey ? npubFromHex(pubkey) : null;
 }
 
 function canPost(): boolean {
   return Boolean(secret || nip07Pubkey);
 }
 
-function signerLabel(): string {
-  return nip07Pubkey ? "nip07" : "nsec";
+function signer(): Signer {
+  if (nip07Pubkey) return "nip07";
+  if (secret) return heldByYubiKey ? "yubikey" : "nsec";
+  return vault ? "locked" : "none";
+}
+
+function refreshYubiKey(message?: string): void {
+  if (!yubikeyAvailable()) showYubiKey("unavailable", message);
+  else if (!vault) showYubiKey("setup", message);
+  else showYubiKey(heldByYubiKey ? "unlocked" : "locked", message);
 }
 
 function refreshIdentity(): void {
-  setIdentity(currentNpub(), canPost(), signerLabel(), ownPubkey());
+  setIdentity(currentNpub(), signer(), ownPubkey());
+  refreshYubiKey();
 }
 
 function storedWind(): WindMode | null {
@@ -173,6 +203,48 @@ function afterKey(): void {
   }
 }
 
+// Unlocking the vault's own key must not re-read follows and wipe the string.
+function holdSecret(next: Uint8Array, viaYubiKey: boolean): void {
+  const before = ownPubkey();
+  secret = next;
+  heldByYubiKey = viaYubiKey;
+  nip07Pubkey = null;
+  if (ownPubkey() === before) refreshIdentity();
+  else afterKey();
+}
+
+async function unlockVault(): Promise<void> {
+  if (!vault) return;
+  holdSecret(await unlockWithYubiKey(vault), true);
+  setStatus("Your YubiKey opened the string. It stays in memory until the desk closes.");
+}
+
+function yubikeyFailed(error: unknown): void {
+  const message = error instanceof Error ? error.message : "The YubiKey would not answer.";
+  refreshYubiKey(message);
+  setStatus(message);
+}
+
+function secretToLock(): Uint8Array {
+  if (nsecInput.value.trim()) return decodeSecret(nsecInput.value);
+  if (secret) return secret;
+  throw new Error("Paste your nsec, or cut a new key, before you lock it.");
+}
+
+function dropIdentity(status: string): void {
+  secret = null;
+  heldByYubiKey = false;
+  nip07Pubkey = null;
+  followPubkeys = [];
+  followsLoaded = false;
+  thisPubkey = undefined;
+  refreshIdentity();
+  persistWind("global");
+  applyWind("global");
+  setStatus(status);
+  dialog.close();
+}
+
 async function connectNip07(): Promise<void> {
   if (!window.nostr?.getPublicKey) {
     setStatus("No NIP-07 signer in this browser.");
@@ -180,6 +252,7 @@ async function connectNip07(): Promise<void> {
   }
   nip07Pubkey = await window.nostr.getPublicKey();
   secret = null;
+  heldByYubiKey = false;
   preferNip07();
   setStatus("Extension is holding the string. Kite never sees the nsec.");
   dialog.close();
@@ -192,6 +265,7 @@ identityBtn.addEventListener("click", () => {
 
 generateBtn.addEventListener("click", () => {
   secret = generateKey();
+  heldByYubiKey = false;
   nip07Pubkey = null;
   saveSecret(secret, rememberChecked());
   setStatus(
@@ -206,6 +280,7 @@ generateBtn.addEventListener("click", () => {
 importBtn.addEventListener("click", () => {
   try {
     secret = decodeSecret(nsecInput.value);
+    heldByYubiKey = false;
     nip07Pubkey = null;
     saveSecret(secret, rememberChecked());
     nsecInput.value = "";
@@ -223,16 +298,66 @@ importBtn.addEventListener("click", () => {
 
 forgetBtn.addEventListener("click", () => {
   forgetSecret();
+  dropIdentity(
+    vault
+      ? "Listening only. Your YubiKey still holds the lock; Remove lock forgets it too."
+      : "Listening only. The string is back in the drawer.",
+  );
+});
+
+yubikeyUnlockBtn.addEventListener("click", () => {
+  setYubiKeyBusy(true, "Touch your YubiKey…");
+  void unlockVault()
+    .then(() => dialog.close())
+    .catch(yubikeyFailed)
+    .finally(() => setYubiKeyBusy(false));
+});
+
+yubikeyLockBtn.addEventListener("click", () => {
+  let toLock: Uint8Array;
+  try {
+    toLock = secretToLock();
+  } catch (error) {
+    yubikeyFailed(error);
+    return;
+  }
+  setYubiKeyBusy(true, "Touch your YubiKey. Setup may ask twice.");
+  void lockToYubiKey(toLock, shortNpub(npubFromSecret(toLock)))
+    .then((sealed) => {
+      forgetSecret();
+      nsecInput.value = "";
+      holdSecret(toLock, true);
+      vault = sealed;
+      refreshIdentity();
+      setStatus("String locked to your YubiKey. Next time, a touch holds it again.");
+      dialog.close();
+    })
+    .catch(yubikeyFailed)
+    .finally(() => setYubiKeyBusy(false));
+});
+
+yubikeyRelockBtn.addEventListener("click", () => {
   secret = null;
-  nip07Pubkey = null;
-  followPubkeys = [];
-  followsLoaded = false;
-  thisPubkey = undefined;
+  heldByYubiKey = false;
   refreshIdentity();
-  persistWind("global");
-  applyWind("global");
-  setStatus("Listening only. The string is back in the drawer.");
+  setStatus("Locked. Touch your YubiKey to hold the string again.");
   dialog.close();
+});
+
+yubikeyRemoveBtn.addEventListener("click", () => {
+  const ok = window.confirm(
+    "Remove the YubiKey lock? Kite forgets its sealed copy of this nsec. You will need the nsec itself to hold this string again.",
+  );
+  if (!ok) return;
+  const vaultWasIdentity = heldByYubiKey || signer() === "locked";
+  forgetVault();
+  vault = null;
+  if (vaultWasIdentity) {
+    dropIdentity("YubiKey lock removed. Listening only.");
+  } else {
+    refreshIdentity();
+    setStatus("YubiKey lock removed.");
+  }
 });
 
 nip07Btn.addEventListener("click", () => {
@@ -272,6 +397,15 @@ spool.addEventListener("submit", async (event) => {
   event.preventDefault();
   const content = note.value.trim();
   if (!content) return;
+  if (!canPost() && vault) {
+    setStatus("Touch your YubiKey to release this note…");
+    try {
+      await unlockVault();
+    } catch (error) {
+      yubikeyFailed(error);
+      return;
+    }
+  }
   if (!canPost()) {
     dialog.showModal();
     setStatus("Hold a string before you release a note.");

@@ -1,4 +1,4 @@
-import type { Note, Profile, RelayState, WindMode } from "./types";
+import type { Note, Profile, RelayState, Signer, WindMode } from "./types";
 import { hostOf, npubOf } from "./nostr";
 import { nip19 } from "nostr-tools";
 import { shortNpub } from "./keys";
@@ -19,6 +19,29 @@ const followCountEl = document.querySelector<HTMLParagraphElement>("#follow-coun
 const nip07Btn = document.querySelector<HTMLButtonElement>("#nip07")!;
 const rememberEl = document.querySelector<HTMLInputElement>("#remember")!;
 const noteEl = document.querySelector<HTMLTextAreaElement>("#note")!;
+const yubikeyStatusEl = document.querySelector<HTMLParagraphElement>("#yubikey-status")!;
+const yubikeyUnlockBtn = document.querySelector<HTMLButtonElement>("#yubikey-unlock")!;
+const yubikeyLockBtn = document.querySelector<HTMLButtonElement>("#yubikey-lock")!;
+const yubikeyRelockBtn = document.querySelector<HTMLButtonElement>("#yubikey-relock")!;
+const yubikeyRemoveBtn = document.querySelector<HTMLButtonElement>("#yubikey-remove")!;
+
+const ROLE: Record<Signer, string> = {
+  none: "read-only",
+  nsec: "on the string",
+  nip07: "signed by extension",
+  yubikey: "held by yubikey",
+  locked: "locked · yubikey",
+};
+
+export type YubiKeyView = "unavailable" | "setup" | "locked" | "unlocked";
+
+const YUBIKEY_COPY: Record<YubiKeyView, string> = {
+  unavailable: "YubiKey login needs Brave, Chromium, or Firefox over https or http://localhost.",
+  setup:
+    "Paste your nsec below, or hold one first, then lock it to your YubiKey. Kite keeps only a sealed copy here; opening it takes a touch and the key's PIN.",
+  locked: "Locked to your YubiKey. Touch it and enter the PIN to hold the string.",
+  unlocked: "Opened with your YubiKey. The key stays in memory until you lock it or close the desk.",
+};
 
 const profiles = new Map<string, Profile>();
 const notes = new Map<string, Note>();
@@ -455,14 +478,30 @@ export function setStatus(text: string): void {
   statusEl.textContent = text;
 }
 
-export function setIdentity(npub: string | null, canPost: boolean, via = "nsec", hex?: string): void {
+export function setIdentity(npub: string | null, via: Signer, hex?: string): void {
   currentNpub = npub;
   currentOwnHex = hex;
   callsignEl.textContent = npub ? shortNpub(npub) : "listening";
-  roleEl.textContent = canPost ? (via === "nip07" ? "signed by extension" : "on the string") : "read-only";
+  roleEl.textContent = ROLE[via];
   npubEl.textContent = npub ?? "none";
-  releaseBtn.disabled = !canPost;
+  // A locked string can still release: the button asks the YubiKey first.
+  releaseBtn.disabled = via === "none";
   pushBar();
+}
+
+export function showYubiKey(view: YubiKeyView, message?: string): void {
+  yubikeyUnlockBtn.hidden = view !== "locked";
+  yubikeyLockBtn.hidden = view !== "setup";
+  yubikeyRelockBtn.hidden = view !== "unlocked";
+  yubikeyRemoveBtn.hidden = view !== "locked" && view !== "unlocked";
+  yubikeyStatusEl.textContent = message ?? YUBIKEY_COPY[view];
+}
+
+export function setYubiKeyBusy(busy: boolean, message?: string): void {
+  for (const button of [yubikeyUnlockBtn, yubikeyLockBtn, yubikeyRelockBtn, yubikeyRemoveBtn]) {
+    button.disabled = busy;
+  }
+  if (message) yubikeyStatusEl.textContent = message;
 }
 
 export function setWindMode(mode: WindMode, followCount?: number, who?: string): void {
@@ -531,7 +570,7 @@ export const seedNotes: Note[] = [
     id: "seed-2",
     pubkey: "0".repeat(64),
     createdAt: Math.floor(Date.now() / 1000) - 20,
-    content: "Hold a string in this session, or sign with a NIP-07 extension. The nsec stays off disk unless you ask.",
+    content: "Hold a string in this session, lock it to a YubiKey, or sign with a NIP-07 extension. The nsec stays off disk unless you ask.",
     reply: false,
     local: true,
   },
