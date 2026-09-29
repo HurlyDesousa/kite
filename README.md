@@ -26,7 +26,7 @@ Kite follows the marketplace contract those plugins use: `manifest.json` at the 
 - Click a flag to reply; Release clips the reply to that note
 - Compose from the spool at the ground — the button is **Release**
 - Omarchy paints the sky: `theme-set` rewrites colours from `colors.toml`
-- The bar chip appears only while a Kite desk window is open; it opens a KeyboardPanel with the latest notes, then **Open desk**
+- The bar chip appears only while Kite is running (the local desk server answers, or a window is showing Kite); it opens a KeyboardPanel with the latest notes, then **Open desk**
 
 You can listen with no key. Click the kite when you want to hold a string.
 
@@ -56,7 +56,7 @@ Plugins run unsandboxed inside `omarchy-shell`. Read this repo before you add it
 omarchy plugin add https://github.com/HurlyDesousa/kite.git --enable
 ```
 
-That is the bar widget. It does not start Node, and it stays out of the bar until a Kite desk window is open. To also run the desk from `kite` / **Super+Shift+Alt+N** (it opens `http://kite.localhost:7423` as a webapp):
+That is the bar widget. It does not start Node, and it stays out of the bar until Kite is running. To also run the desk from `kite` / **Super+Shift+Alt+N** (it opens `http://kite.localhost:7423` as a webapp):
 
 ```bash
 git clone https://github.com/HurlyDesousa/kite.git

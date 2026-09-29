@@ -3,25 +3,49 @@ import Quickshell.Wayland
 import qs.Ui
 
 // Marketplace bar-widget: Loader → Panel.qml, injectPanel, togglePanel.
-// The chip only takes a slot while a Kite desk window is open.
+// The chip only takes a slot while Kite is running: its local server
+// answers, or a window is showing a Kite desk.
 BarWidget {
     id: root
     moduleName: "io.github.hurlydesousa.kite"
 
+    readonly property string serverUrl: "http://127.0.0.1:7423/kite.svg"
+    property bool serverUp: false
+
     // Webapp windows are named after their origin (brave-kite.localhost__-Default);
-    // an exact "Kite" title covers the desk opened as an app from anywhere else.
+    // a browser shows "Kite - Chromium" while the Kite tab is the active one.
     function isKiteWindow(toplevel) {
         if (!toplevel) return false
         return /(^|-)kite\.(localhost|s-w\.art)__/.test(String(toplevel.appId || ""))
-            || toplevel.title === "Kite"
+            || /^Kite( [-–—] |$)/.test(String(toplevel.title || ""))
     }
 
-    readonly property bool kiteRunning: {
+    readonly property bool kiteWindowOpen: {
         var windows = ToplevelManager.toplevels.values
         for (var i = 0; i < windows.length; i++) {
             if (root.isKiteWindow(windows[i])) return true
         }
         return false
+    }
+
+    readonly property bool kiteRunning: kiteWindowOpen || serverUp
+
+    function probeServer() {
+        var request = new XMLHttpRequest()
+        request.timeout = 2000
+        request.onreadystatechange = function() {
+            if (request.readyState === XMLHttpRequest.DONE) root.serverUp = request.status > 0
+        }
+        request.open("GET", root.serverUrl)
+        request.send()
+    }
+
+    Timer {
+        interval: 5000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.probeServer()
     }
 
     visible: kiteRunning
@@ -85,7 +109,7 @@ BarWidget {
         id: button
         bar: root.bar
         text: "󱓝"
-        tooltipText: "Kite is open"
+        tooltipText: "Kite is running"
         onPressed: function(b) {
             if (b !== Qt.RightButton) root.togglePanel()
         }
